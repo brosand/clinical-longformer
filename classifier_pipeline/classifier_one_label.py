@@ -13,7 +13,7 @@ import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader, RandomSampler
 from transformers import AutoModel,RobertaForMaskedLM
-from transformers.modeling_longformer import LongformerSelfAttention
+from transformers.models.longformer.modeling_longformer import LongformerSelfAttention
 
 import pytorch_lightning as pl
 from tokenizer import Tokenizer
@@ -460,7 +460,11 @@ class Classifier(pl.LightningModule):
         self.log('test_batch_recall',recall)
         self.log('test_batch_weighted_acc', acc)
 
-        cm = metrics.confusion_matrix(pred = labels_hat,target=y,normalize=False)
+        from pytorch_lightning.metrics.functional import confusion_matrix
+        # TODO CHANGE THIS
+        # return (labels_hat, y)
+        cm = confusion_matrix(preds = labels_hat,target=y,normalize=None, num_classes=50)
+        # cm = confusion_matrix(preds = labels_hat,target=y,normalize=False, num_classes=len(y.unique()))
         self.test_conf_matrices.append(cm)
 
 

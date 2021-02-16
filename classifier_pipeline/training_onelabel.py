@@ -1,3 +1,4 @@
+#%%
 """
 Runs a model on a single node across N-gpus.
 """
@@ -56,7 +57,7 @@ def main(hparams) -> None:
     # 6 START TRAINING
     # ------------------------
 
-    datamodule = MedNLIDataModule
+    #datamodule = MedNLIDataModule
     trainer.fit(model, model.data)
     trainer.test(model, model.data.test_dataloader())
 
@@ -80,6 +81,7 @@ if __name__ == "__main__":
         type=int,
         help="The best k models according to the quantity monitored will be saved.",
     )
+
 
     # Early Stopping
     parser.add_argument(
@@ -144,3 +146,37 @@ if __name__ == "__main__":
     # RUN TRAINING
     # ---------------------
     main(hparams)
+
+# # %%
+# class hparams:
+#     def __init__(self) -> None:
+#         self.seed=3
+#         self.save_top_k=1
+#         self.monitor='vall_acc'
+#         self.metric_mode='max'
+#         self.patience=5
+#         self.max_epochs=10
+#         self.fast_dev_run=True
+#         self.batch_size=12
+#         self.accumulate_grad_batches=2
+#         self.gpus=1
+
+# #%%
+# from types import SimpleNamespace
+
+# sn = SimpleNamespace()
+# sn.seed=3
+# sn.save_top_k=1
+# sn.monitor='vall_acc'
+# sn.metric_mode='max'
+# sn.patience=5
+# sn.max_epochs=10
+# sn.fast_dev_run=True
+# sn.batch_size=12
+# sn.accumulate_grad_batches=2
+# sn.gpus=1
+
+
+# main(sn)
+
+# # %%
