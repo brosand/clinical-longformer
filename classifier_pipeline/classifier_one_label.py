@@ -123,6 +123,7 @@ class Classifier(pl.LightningModule):
                     np.unique(self.top_codes).tolist(), 
                     reserved_labels=[]
                 )
+            # self.hparams.nn_arch = 'ben2'
 
             self.label_encoder.unknown_index = None
 
@@ -267,9 +268,39 @@ class Classifier(pl.LightningModule):
 
            #others:
              #'emilyalsentzer/Bio_ClinicalBERT' 'simonlevine/biomed_roberta_base-4096-speedfix'
+        # Ben's new architecture
+        if self.hparams.nn_arch == 'ben1':
+            self.classification_head = nn.Sequential(
+
+                nn.Dropout(0.1),
+                nn.Linear(self.encoder_features, self.encoder_features * 2),
+                # nn.Tanh(),
+                nn.ReLU(),
+                nn.Linear(self.encoder_features * 2, self.encoder_features),
+                nn.Tanh(),
+                nn.Linear(self.encoder_features, self.data.label_encoder.vocab_size),
+
+            )
+        
+        elif self.hparams.nn_arch == 'ben2':
+            self.classification_head = nn.Sequential(
+
+                nn.Dropout(0.1),
+                nn.Linear(self.encoder_features, self.encoder_features * 2),
+                # nn.Tanh(),
+                nn.ReLU(),
+                nn.Linear(self.encoder_features * 2, self.encoder_features),
+                nn.Sigmoid(),
+                nn.Linear(self.encoder_features, self.data.label_encoder.vocab_size),
+
+            )
+        
+        elif self.hparams.nn_arch=='CNN':
+            logger.critical('CNN not yet implemented')
+ 
 
         # Classification head
-        if self.hparams.single_label_encoding == 'default':
+        elif self.hparams.single_label_encoding == 'default':
             self.classification_head = nn.Sequential(
 
                 nn.Linear(self.encoder_features, self.encoder_features * 2),
