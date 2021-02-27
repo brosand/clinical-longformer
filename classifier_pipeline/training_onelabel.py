@@ -7,6 +7,8 @@ import os
 from datetime import datetime
 from pathlib import Path
 
+from pytorch_lightning.accelerators.accelerator import Accelerator
+
 from classifier_one_label import Classifier
 import numpy as np
 from pytorch_lightning import Trainer
@@ -51,7 +53,8 @@ def main(hparams) -> None:
         fast_dev_run=hparams.fast_dev_run,
         accumulate_grad_batches=hparams.accumulate_grad_batches,
         max_epochs=hparams.max_epochs,
-        default_root_dir=f'./classifier_pipeline/{hparams.encoder_model}'
+        default_root_dir=f'./classifier_pipeline/{hparams.encoder_model}',
+        accelerator='dp'
     )
 
     # ------------------------
@@ -136,6 +139,8 @@ if __name__ == "__main__":
 
     # gpu args
     parser.add_argument("--gpus", type=int, default=1, help="How many gpus")
+
+    parser.add_argument("--nn_arch", type=str, default='default')
 
 
 

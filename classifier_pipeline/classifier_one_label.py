@@ -114,6 +114,8 @@ class Classifier(pl.LightningModule):
 
             self.n_labels = 50
             self.top_codes = pd.read_csv(self.hparams.train_csv)['ICD9_CODE'].value_counts()[:self.n_labels].index.tolist()
+            # self.top_codes = ['I48', 'CIR007']
+            # self.n_labels = len(self.top_codes)
             logger.warning(f'Classifying against the top {self.n_labels} most frequent ICD codes: {self.top_codes}')
             
 
@@ -123,7 +125,6 @@ class Classifier(pl.LightningModule):
                     np.unique(self.top_codes).tolist(), 
                     reserved_labels=[]
                 )
-            # self.hparams.nn_arch = 'ben2'
 
             self.label_encoder.unknown_index = None
 
@@ -273,10 +274,9 @@ class Classifier(pl.LightningModule):
             self.classification_head = nn.Sequential(
 
                 nn.Dropout(0.1),
-                nn.Linear(self.encoder_features, self.encoder_features * 2),
-                # nn.Tanh(),
-                nn.ReLU(),
-                nn.Linear(self.encoder_features * 2, self.encoder_features),
+                nn.Linear(self.encoder_features, self.encoder_features * 3),
+                nn.Tanh(),
+                nn.Linear(self.encoder_features * 3, self.encoder_features),
                 nn.Tanh(),
                 nn.Linear(self.encoder_features, self.data.label_encoder.vocab_size),
 
@@ -287,9 +287,10 @@ class Classifier(pl.LightningModule):
 
                 nn.Dropout(0.1),
                 nn.Linear(self.encoder_features, self.encoder_features * 2),
-                # nn.Tanh(),
+                nn.Tanh(),
+                nn.Linear(self.encoder_features * 2, self.encoder_features * 3),
                 nn.ReLU(),
-                nn.Linear(self.encoder_features * 2, self.encoder_features),
+                nn.Linear(self.encoder_features * 3, self.encoder_features),
                 nn.Sigmoid(),
                 nn.Linear(self.encoder_features, self.data.label_encoder.vocab_size),
 
@@ -485,11 +486,13 @@ class Classifier(pl.LightningModule):
         prec =metrics.precision(labels_hat,y,  class_reduction='weighted')
         recall = metrics.recall(labels_hat,y,  class_reduction='weighted')
         acc = metrics.accuracy(labels_hat,y,   class_reduction='weighted')
+        auroc = metrics.multiclass_auroc(labels_hat, y)
 
         self.log('test_batch_prec',prec)
         self.log('test_batch_f1',f1)
         self.log('test_batch_recall',recall)
         self.log('test_batch_weighted_acc', acc)
+        self.log('test_batch_auc_roc', auroc)
 
         from pytorch_lightning.metrics.functional import confusion_matrix
         # TODO CHANGE THIS
@@ -532,11 +535,13 @@ class Classifier(pl.LightningModule):
         prec =metrics.precision(labels_hat, y,class_reduction='weighted')
         recall = metrics.recall(labels_hat, y,class_reduction='weighted')
         acc = metrics.accuracy(labels_hat, y,class_reduction='weighted')
+        auroc = metrics.multiclass_auroc(y_hat,y)
 
         self.log('val_prec',prec)
         self.log('val_f1',f1)
         self.log('val_recall',recall)
         self.log('val_acc_weighted', acc)
+        self.log('val_auroc', auroc)
         # self.log('val_cm',cm)
         
 
