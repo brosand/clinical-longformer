@@ -113,7 +113,7 @@ class Classifier(pl.LightningModule):
             self.transformer_type = self.hparams.transformer_type
 
             self.n_labels = 50
-            self.top_codes = pd.read_csv(self.hparams.train_csv)['ICD9_CODE'].value_counts()[:self.n_labels].index.tolist()
+            self.top_codes = pd.read_csv(self.hparams.train_csv)['ICD10_CODE'].value_counts()[:self.n_labels].index.tolist()
             # self.top_codes = ['I48', 'CIR007']
             # self.n_labels = len(self.top_codes)
             logger.warning(f'Classifying against the top {self.n_labels} most frequent ICD codes: {self.top_codes}')
@@ -137,8 +137,8 @@ class Classifier(pl.LightningModule):
             """
         
             df = pd.read_csv(path)
-            df = df[["TEXT", "ICD9_CODE"]]
-            df = df.rename(columns={'TEXT':'text', 'ICD9_CODE':'label'})
+            df = df[["TEXT", "ICD10_CODE"]]
+            df = df.rename(columns={'TEXT':'text', 'ICD10_CODE':'label'})
 
             df = df[df['label'].isin(self.top_codes)]
             df["text"] = df["text"].astype(str)
@@ -486,13 +486,13 @@ class Classifier(pl.LightningModule):
         prec =metrics.precision(labels_hat,y,  class_reduction='weighted')
         recall = metrics.recall(labels_hat,y,  class_reduction='weighted')
         acc = metrics.accuracy(labels_hat,y,   class_reduction='weighted')
-        auroc = metrics.multiclass_auroc(labels_hat, y)
+        # auroc = metrics.multiclass_auroc(labels_hat, y)
 
         self.log('test_batch_prec',prec)
         self.log('test_batch_f1',f1)
         self.log('test_batch_recall',recall)
         self.log('test_batch_weighted_acc', acc)
-        self.log('test_batch_auc_roc', auroc)
+        # self.log('test_batch_auc_roc', auroc)
 
         from pytorch_lightning.metrics.functional import confusion_matrix
         # TODO CHANGE THIS
@@ -535,13 +535,12 @@ class Classifier(pl.LightningModule):
         prec =metrics.precision(labels_hat, y,class_reduction='weighted')
         recall = metrics.recall(labels_hat, y,class_reduction='weighted')
         acc = metrics.accuracy(labels_hat, y,class_reduction='weighted')
-        auroc = metrics.multiclass_auroc(y_hat,y)
+        # auroc = metrics.multiclass_auroc(y_hat,y)
 
         self.log('val_prec',prec)
         self.log('val_f1',f1)
         self.log('val_recall',recall)
         self.log('val_acc_weighted', acc)
-        self.log('val_auroc', auroc)
         # self.log('val_cm',cm)
         
 
@@ -626,19 +625,19 @@ class Classifier(pl.LightningModule):
         )
         parser.add_argument(
             "--train_csv",
-            default="data/intermediary-data/notes2diagnosis-icd-train.csv",
+            default="data/yale-intermediary-data/notes2diagnosis-icd-train.csv",
             type=str,
             help="Path to the file containing the train data.",
         )
         parser.add_argument(
             "--dev_csv",
-            default="data/intermediary-data/notes2diagnosis-icd-validate.csv",
+            default="data/yale-intermediary-data/notes2diagnosis-icd-validate.csv",
             type=str,
             help="Path to the file containing the dev data.",
         )
         parser.add_argument(
             "--test_csv",
-            default="data/intermediary-data/notes2diagnosis-icd-test.csv",
+            default="data/yale-intermediary-data/notes2diagnosis-icd-test.csv",
             type=str,
             help="Path to the file containing the dev data.",
         )
