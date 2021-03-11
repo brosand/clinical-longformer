@@ -127,6 +127,25 @@ class Classifier(pl.LightningModule):
                 )
 
             self.label_encoder.unknown_index = None
+        def get_yale_data(self, path: str) -> list:
+
+            """ Reads a comma separated value file.
+
+            :param path: path to a csv file.
+            
+            :return: List of records as dictionaries
+            """
+            df = pd.read_csv(path)
+            cols = df.columns
+            label_cols = [col for col in cols if 'label' in col]
+            df = df.rename(columns={'TEXT':'text'})
+            df = df[["text"] + label_cols]
+            df[label_cols].astype(str)
+            df['text'].astype(str)
+            logger.warning(f'{path} dataframe has {len(df)} examples.' )
+            return df.to_dict("records")
+
+
 
         def get_mimic_data(self, path: str) -> list: #REWRITE
             """ Reads a comma separated value file.
@@ -145,6 +164,7 @@ class Classifier(pl.LightningModule):
             df["label"] = df["label"].astype(str)
 
             df.to_csv(f'{path}_top_codes_filtered.csv')
+            print(df.info())
 
             logger.warning(f'{path} dataframe has {len(df)} examples.' )
             return df.to_dict("records")
@@ -152,7 +172,7 @@ class Classifier(pl.LightningModule):
         def train_dataloader(self) -> DataLoader:
             """ Function that loads the train set. """
             logger.warning('Loading training data...')
-            self._train_dataset = self.get_mimic_data(self.hparams.train_csv)
+            self._train_dataset = self.get_yale_data(self.hparams.train_csv)
             return DataLoader(
                 dataset=self._train_dataset,
                 sampler=RandomSampler(self._train_dataset),
@@ -165,7 +185,7 @@ class Classifier(pl.LightningModule):
             logger.warning('Loading validation data...')
 
             """ Function that loads the validation set. """
-            self._dev_dataset = self.get_mimic_data(self.hparams.dev_csv)
+            self._dev_dataset = self.get_yale_data(self.hparams.dev_csv)
             return DataLoader(
                 dataset=self._dev_dataset,
                 batch_size=self.hparams.batch_size,
@@ -177,7 +197,7 @@ class Classifier(pl.LightningModule):
             logger.warning('Loading testing data...')
 
             """ Function that loads the validation set. """
-            self._test_dataset = self.get_mimic_data(self.hparams.test_csv)
+            self._test_dataset = self.get_yale_data(self.hparams.test_csv)
 
             return DataLoader(
                 dataset=self._test_dataset,
@@ -324,7 +344,7 @@ class Classifier(pl.LightningModule):
         #FOR SINGLE LABELS --> MSE (linear regression) LOSS (like a regression problem)
         # For multiple POSSIBLE discrete single labels, CELoss
         # for many possible categoricla labels, binary cross-entropy (logistic regression for all labels.)
-        self._loss = nn.CrossEntropyLoss()
+        self._loss = nn.BCELoss()
 
         # self._loss = nn.MSELoss()
 
