@@ -145,8 +145,8 @@ class Classifier(pl.LightningModule):
             # logger.info("codes are: {}".format(codes))
             out = [label for label in codes if label in self.hparams.top_codes]
             # logger.info("out is: {}".format(out))
-            if out == []:
-               out = ['']
+            # if out == []:
+            #    out = ['']
             # return self.mlb.transform([out])
             return out
             
@@ -452,7 +452,6 @@ class Classifier(pl.LightningModule):
         Returns:
             torch.tensor with loss value.
         """
-        logger.info("loss worked")
         return self._loss(predictions["logits"], targets["labels"].float())
 
     def prepare_sample(self, sample: list, prepare_target: bool = True) -> (dict, dict):
@@ -494,10 +493,10 @@ class Classifier(pl.LightningModule):
         # Prepare target:
         # try:
         #NOTE WARNING torch.tensor is kinda bad maybe switch for a copier
-        logger.info(labels)
+        # logger.info(labels)
         #NOTE WARNING double check that mlb is working correct I think it is
         sample_labels=torch.tensor(self.mlb.transform(labels))
-        logger.info(sample_labels)
+        # logger.info(sample_labels)
         targets = {'labels': sample_labels}
         return inputs, targets
 
@@ -564,7 +563,7 @@ class Classifier(pl.LightningModule):
             - dictionary containing the loss and the metrics to be added to the lightning logger.
         """
         inputs, targets = batch
-        logger.info(batch)
+        # logger.info(batch)
         model_out = self.forward(**inputs)
         loss_val = self.loss(model_out, targets)
 
