@@ -23,11 +23,14 @@ from torchnlp.utils import collate_tensors, lengths_to_mask
 from utils import mask_fill
 from sklearn.preprocessing import MultiLabelBinarizer
 
-import pytorch_lightning.metrics.functional.classification as metrics
+import torchmetrics
+import torchmetrics.functional.classification as fnmetrics
 from loguru import logger
 
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
+
+from sklearn.metrics import classification_report
 
 
 
@@ -163,6 +166,8 @@ class Classifier(pl.LightningModule):
         
             if self.hparams.fast_dev_run:
                 df = pd.read_csv(path, converters={'CODES': eval}, skiprows=range(100,100000))
+            elif self.hparams.mid_dev_run:
+                df = pd.read_csv(path, converters={'CODES': eval}, skiprows = range(1000,100000))
             else:
                 df = pd.read_csv(path, converters={'CODES': eval})
             df = df[["note_text", "CODES"]]
@@ -246,6 +251,14 @@ class Classifier(pl.LightningModule):
         # Set up multi label binarizer:
         self.mlb = MultiLabelBinarizer()
         self.mlb.fit([self.hparams.top_codes])
+
+        self.acc = torchmetrics.Accuracy()
+        self.f1 = torchmetrics.F1(num_classes=self.hparams.n_labels, average='micro')
+        self.auroc = torchmetrics.AUROC(num_classes=self.hparams.n_labels, average='weighted')
+        # NOTE could try 'global' instead of samplewise for mdmc reduce
+        self.prec = torchmetrics.Precision(num_classes=self.hparams.n_labels, is_multiclass=False)
+        self.recall = torchmetrics.Recall(num_classes=self.hparams.n_labels, is_multiclass=False)
+        self.confusion_matrix = torchmetrics.ConfusionMatrix(num_classes=self.hparams.n_labels)
         
 
     def __build_model(self) -> None:
@@ -568,37 +581,65 @@ class Classifier(pl.LightningModule):
         loss_val = self.loss(model_out, targets)
 
         # in DP mode (default) make sure if result is scalar, there's another dim in the beginning
-        if self.trainer.use_dp or self.trainer.use_ddp2:
-            loss_val = loss_val.unsqueeze(0)
+        # if self.trainer.use_dp or self.trainer.use_ddp2:
+        #     loss_val = loss_val.unsqueeze(0)
             
         self.log('test_loss',loss_val)
 
 
         y_hat=model_out['logits']
         # labels_hat = torch.argmax(y_hat, dim=1)
-        labels_hat = torch.tensor([[1 if x > 0 else 0 for x in item] for item in y_hat], device=y_hat.device)
+        preds = torch.tensor([[1 if x > 0 else 0 for x in item] for item in y_hat], device=y_hat.device)
         y=targets['labels']
+        return {'loss' : loss_val, 'preds' : preds, 'target' : y}
 
 
-        f1 = metrics.f1_score(labels_hat,y,    class_reduction='weighted')
-        prec =metrics.precision(labels_hat,y,  class_reduction='weighted')
-        recall = metrics.recall(labels_hat,y,  class_reduction='weighted')
-        acc = metrics.accuracy(labels_hat,y,   class_reduction='weighted')
-        # auroc = metrics.multiclass_auroc(labels_hat, y)
+
+        
+
+    def test_step_end(self, outputs):
+
+        preds = outputs['preds']
+        target = outputs['target']
+
+        logger.info("Pred shape is {}".format(preds.size()))
+        logger.info("Target shape is {}".format(target.size()))
+        # f1 = metrics.f1_score(labels_hat,y,    class_reduction='weighted')
+        # prec =metrics.precision(labels_hat,y,  class_reduction='weighted')
+        # recall = metrics.recall(labels_hat,y,  class_reduction='weighted')
+        # acc = metrics.accuracy(labels_hat,y,   class_reduction='weighted')
+        # # auroc = metrics.multiclass_auroc(labels_hat, y)
+
+        acc = self.acc(preds, target)
+        f1 = self.f1(preds, target)
+        # f1 = fnmetrics.f1(preds, target, num_classes=self.hparams.n_labels)
+        prec = self.prec(preds, target)
+        recall = self.recall(preds, target)
+        try:
+            auroc = self.auroc(preds.float(), target)
+        except ValueError as v:
+            print(v)
+            auroc = 0
+        confusion_matrix = self.confusion_matrix(preds, target)
 
         self.log('test_batch_prec',prec)
         self.log('test_batch_f1',f1)
         self.log('test_batch_recall',recall)
         self.log('test_batch_weighted_acc', acc)
+        self.log('test_batch auroc', auroc)
         # self.log('test_batch_auc_roc', auroc)
 
         from pytorch_lightning.metrics.functional import confusion_matrix
         # TODO CHANGE THIS
         # return (labels_hat, y)
-        cm = confusion_matrix(preds = labels_hat,target=y,normalize=None, num_classes=50)
+        cm = confusion_matrix(preds = preds,target=target,normalize=None, num_classes=50)
         # cm = confusion_matrix(preds = labels_hat,target=y,normalize=False, num_classes=len(y.unique()))
         self.test_conf_matrices.append(cm)
-
+        # logger.info(labels_hat)
+        # logger.info(y)
+        logger.info(classification_report(preds.detach().cpu(), target.detach().cpu()))
+        logger.info(confusion_matrix)
+        #update and log
 
     def validation_step(self, batch: tuple, batch_nb: int, *args, **kwargs) -> dict:
         """ Similar to the training step but with the model in eval mode.
@@ -637,17 +678,20 @@ class Classifier(pl.LightningModule):
 
         self.log('val_loss',loss_val)
 
-        f1 = metrics.f1_score(labels_hat, y,class_reduction='weighted')
-        prec =metrics.precision(labels_hat, y,class_reduction='weighted')
-        recall = metrics.recall(labels_hat, y,class_reduction='weighted')
-        acc = metrics.accuracy(labels_hat, y,class_reduction='weighted')
-        # auroc = metrics.multiclass_auroc(y_hat,y)
+        # f1 = metrics.f1_score(labels_hat, y,class_reduction='weighted')
+        # prec =metrics.precision(labels_hat, y,class_reduction='weighted')
+        # recall = metrics.recall(labels_hat, y,class_reduction='weighted')
+        # acc = metrics.accuracy(labels_hat, y,class_reduction='weighted')
+        # auroc = skm.AUROC
+        # # auroc = metrics.multiclass_auroc(y_hat,y)
 
-        self.log('val_prec',prec)
-        self.log('val_f1',f1)
-        self.log('val_recall',recall)
-        self.log('val_acc_weighted', acc)
+        # self.log('val_prec',prec)
+        # self.log('val_f1',f1)
+        # self.log('val_recall',recall)
+        # self.log('val_acc_weighted', acc)
+        # logger.info(classification_report(labels_hat.detach().cpu(), y.detach().cpu()))
         # self.log('val_cm',cm)
+
         
 
     def configure_optimizers(self):

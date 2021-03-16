@@ -54,7 +54,8 @@ def main(hparams) -> None:
         accumulate_grad_batches=hparams.accumulate_grad_batches,
         max_epochs=hparams.max_epochs,
         default_root_dir=f'./classifier_pipeline/{hparams.encoder_model}',
-        accelerator='dp'
+        accelerator='dp',
+        profiler="simple",
     )
 
     # ------------------------
@@ -122,7 +123,12 @@ if __name__ == "__main__":
         type=bool,
         help='Run for a trivial single batch and single epoch.'
     )
-
+    parser.add_argument(
+        '--mid_dev_run',
+        default=False,
+        type=bool,
+        help='Run on 1000 samples.'
+    )
     # Batching
     parser.add_argument(
         "--batch_size", default=6, type=int, help="Batch size to be used."
