@@ -18,8 +18,10 @@ from transformers.models.longformer.modeling_longformer import LongformerSelfAtt
 import pytorch_lightning as pl
 from tokenizer import Tokenizer
 from torchnlp.encoders import LabelEncoder
+from torchnlp.encoders.text import stack_and_pad_tensors
 from torchnlp.utils import collate_tensors, lengths_to_mask
 from utils import mask_fill
+from sklearn.preprocessing import MultiLabelBinarizer
 
 import pytorch_lightning.metrics.functional.classification as metrics
 from loguru import logger
@@ -106,44 +108,48 @@ class Classifier(pl.LightningModule):
             self.hparams = classifier_instance.hparams
 
 
-            if self.hparams.transformer_type == 'longformer':
-                self.hparams.batch_size = 6
+            # if self.hparams.transformer_type == 'longformer':
+                # self.hparams.batch_size = 1
+                # raise Exception 
             self.classifier = classifier_instance
 
             self.transformer_type = self.hparams.transformer_type
 
-            self.n_labels = 50
-            self.top_codes = pd.read_csv(self.hparams.train_csv)['code'].value_counts()[:self.n_labels].index.tolist()
+            self.hparams.n_labels = 50
+            df = pd.read_csv(self.hparams.train_csv, converters={'CODES': eval})
+            a = pd.Series([item for sublist in df.CODES for item in sublist])
+            self.hparams.top_codes = a.value_counts()[:self.hparams.n_labels].index.tolist()
             # self.top_codes = ['I48', 'CIR007']
-            # self.n_labels = len(self.top_codes)
-            logger.warning(f'Classifying against the top {self.n_labels} most frequent ICD codes: {self.top_codes}')
+            # self.hparams.n_labels = len(self.top_codes)
+            logger.warning(f'Classifying against the top {self.hparams.n_labels} most frequent ICD codes: {self.hparams.top_codes}')
+
+
+            self.mlb = MultiLabelBinarizer()
+            self.mlb.fit([self.hparams.top_codes])
             
 
              # Label Encoder
-            if self.hparams.single_label_encoding == 'default':
-                self.label_encoder = LabelEncoder(
-                    np.unique(self.top_codes).tolist(), 
-                    reserved_labels=[]
-                )
-
-            self.label_encoder.unknown_index = None
-        def get_yale_data(self, path: str) -> list:
-
-            """ Reads a comma separated value file.
-
-            :param path: path to a csv file.
+            # if self.hparams.single_label_encoding == 'default':
+            #     self.label_encoder = LabelEncoder(
+            #         np.unique(self.top_codes).tolist(), 
+            #         reserved_labels=[]
+            #     )
+            #     self.label_encoder.unknown_index = None
             
-            :return: List of records as dictionaries
-            """
-            df = pd.read_csv(path)
-            cols = df.columns
-            label_cols = [col for col in cols if 'label' in col]
-            df = df.rename(columns={'TEXT':'text'})
-            df = df[["text"] + label_cols]
-            df[label_cols].astype(str)
-            df['text'].astype(str)
-            logger.warning(f'{path} dataframe has {len(df)} examples.' )
-            return df.to_dict("records")
+            # New code added for mlb
+
+
+
+
+        def top_labeler(self, codes):
+            # logger.info("codes are: {}".format(codes))
+            out = [label for label in codes if label in self.hparams.top_codes]
+            # logger.info("out is: {}".format(out))
+            if out == []:
+               out = ['']
+            # return self.mlb.transform([out])
+            return out
+            
 
 
 
@@ -155,16 +161,21 @@ class Classifier(pl.LightningModule):
             :return: List of records as dictionaries
             """
         
-            df = pd.read_csv(path)
-            df = df[["TEXT", "code"]]
-            df = df.rename(columns={'TEXT':'text', 'code':'label'})
+            if self.hparams.fast_dev_run:
+                df = pd.read_csv(path, converters={'CODES': eval}, skiprows=range(100,100000))
+            else:
+                df = pd.read_csv(path, converters={'CODES': eval})
+            df = df[["note_text", "CODES"]]
+            df.rename(columns={'note_text':'text', 'CODES': 'labels'}, inplace=True)
 
-            df = df[df['label'].isin(self.top_codes)]
-            df["text"] = df["text"].astype(str)
-            df["label"] = df["label"].astype(str)
+            # df = df[df['labels'].isin(self.top_codes)]
+            # logger.info(df['labels'])
+            df['labels'] = df['labels'].map(self.top_labeler)
+            # logger.info(df['labels'])
+            # df["text"] = df["text"].astype(str)
+            # df["label"] = df["label"].astype(tr)
 
             df.to_csv(f'{path}_top_codes_filtered.csv')
-            print(df.info())
 
             logger.warning(f'{path} dataframe has {len(df)} examples.' )
             return df.to_dict("records")
@@ -172,7 +183,7 @@ class Classifier(pl.LightningModule):
         def train_dataloader(self) -> DataLoader:
             """ Function that loads the train set. """
             logger.warning('Loading training data...')
-            self._train_dataset = self.get_yale_data(self.hparams.train_csv)
+            self._train_dataset = self.get_mimic_data(self.hparams.train_csv)
             return DataLoader(
                 dataset=self._train_dataset,
                 sampler=RandomSampler(self._train_dataset),
@@ -185,7 +196,7 @@ class Classifier(pl.LightningModule):
             logger.warning('Loading validation data...')
 
             """ Function that loads the validation set. """
-            self._dev_dataset = self.get_yale_data(self.hparams.dev_csv)
+            self._dev_dataset = self.get_mimic_data(self.hparams.dev_csv)
             return DataLoader(
                 dataset=self._dev_dataset,
                 batch_size=self.hparams.batch_size,
@@ -196,8 +207,8 @@ class Classifier(pl.LightningModule):
         def test_dataloader(self) -> DataLoader:
             logger.warning('Loading testing data...')
 
-            """ Function that loads the validation set. """
-            self._test_dataset = self.get_yale_data(self.hparams.test_csv)
+            """ Function that loads the test set. """
+            self._test_dataset = self.get_mimic_data(self.hparams.test_csv)
 
             return DataLoader(
                 dataset=self._test_dataset,
@@ -231,6 +242,12 @@ class Classifier(pl.LightningModule):
 
         self.test_conf_matrices=[]
 
+
+        # Set up multi label binarizer:
+        self.mlb = MultiLabelBinarizer()
+        self.mlb.fit([self.hparams.top_codes])
+        
+
     def __build_model(self) -> None:
         """ Init transformer model + tokenizer + classification head."""
 
@@ -257,7 +274,7 @@ class Classifier(pl.LightningModule):
         logger.warning(f'model is {self.hparams.encoder_model}')
 
         if self.hparams.transformer_type == 'longformer':
-            logger.warning('Turnin ON gradient checkpointing...')
+            logger.warning('Turning ON gradient checkpointing...')
 
             self.transformer = AutoModel.from_pretrained(
             self.hparams.encoder_model,
@@ -298,7 +315,7 @@ class Classifier(pl.LightningModule):
                 nn.Tanh(),
                 nn.Linear(self.encoder_features * 3, self.encoder_features),
                 nn.Tanh(),
-                nn.Linear(self.encoder_features, self.data.label_encoder.vocab_size),
+                nn.Linear(self.encoder_features, self.hparams.n_labels),
 
             )
         
@@ -312,12 +329,23 @@ class Classifier(pl.LightningModule):
                 nn.ReLU(),
                 nn.Linear(self.encoder_features * 3, self.encoder_features),
                 nn.Sigmoid(),
-                nn.Linear(self.encoder_features, self.data.label_encoder.vocab_size),
+                nn.Linear(self.encoder_features, self.hparams.n_labels),
 
             )
         
         elif self.hparams.nn_arch=='CNN':
             logger.critical('CNN not yet implemented')
+        
+        elif self.hparams.nn_arch=='default':
+            self.classification_head = nn.Sequential(
+
+                nn.Linear(self.encoder_features, self.encoder_features * 2),
+                nn.Tanh(),
+                nn.Linear(self.encoder_features * 2, self.encoder_features),
+                nn.Tanh(),
+                nn.Linear(self.encoder_features, self.hparams.n_labels),
+            )
+
  
 
         # Classification head
@@ -328,7 +356,7 @@ class Classifier(pl.LightningModule):
                 nn.Tanh(),
                 nn.Linear(self.encoder_features * 2, self.encoder_features),
                 nn.Tanh(),
-                nn.Linear(self.encoder_features, self.data.label_encoder.vocab_size),
+                nn.Linear(self.encoder_features, self.hparams.n_labels),
 
             )
 
@@ -344,8 +372,9 @@ class Classifier(pl.LightningModule):
         #FOR SINGLE LABELS --> MSE (linear regression) LOSS (like a regression problem)
         # For multiple POSSIBLE discrete single labels, CELoss
         # for many possible categoricla labels, binary cross-entropy (logistic regression for all labels.)
-        # self._loss = nn.BCELoss()
-        self._loss = nn.CrossEntropyLoss()
+        self._loss = nn.BCELoss()
+        self._loss = nn.BCEWithLogitsLoss()
+        # self._loss = nn.CrossEntropyLoss()
 
         # self._loss = nn.MSELoss()
 
@@ -378,10 +407,11 @@ class Classifier(pl.LightningModule):
             model_out = self.forward(**model_input)
             logits = model_out["logits"].numpy()
             predicted_labels = [
-                self.data.label_encoder.index_to_token[prediction]
+                #TODO change this for no label encoder
+                self.mlb.inverse_transform[prediction]
                 for prediction in np.argmax(logits, axis=1)
             ]
-            sample["predicted_label"] = predicted_labels[0]
+            sample["predicted_label"] = predicted_labels
 
         return sample
 
@@ -422,7 +452,8 @@ class Classifier(pl.LightningModule):
         Returns:
             torch.tensor with loss value.
         """
-        return self._loss(predictions["logits"], targets["labels"])
+        logger.info("loss worked")
+        return self._loss(predictions["logits"], targets["labels"].float())
 
     def prepare_sample(self, sample: list, prepare_target: bool = True) -> (dict, dict):
         """
@@ -431,26 +462,68 @@ class Classifier(pl.LightningModule):
         
         Returns:
             - dictionary with the expected model inputs.
-            - dictionary with the expected target labels.
+            - dictionary with the expe  cted target labels.
         """
-        sample = collate_tensors(sample)
+        # logger.info("Sample label:{}".format([sample[i]['labels'] for i in range(6)]))
+        # logger.info("Sample label:{}".format(sample))
+        # sample['text'] = collate_tensors(sample[i]['text']for i in range(6))
+        # sample = collate_tensors(sample)
+
+        texts = [s['text'] for s in sample]
+        labels = [s['labels'] for s in sample]
+
+
         
-        tokens, lengths = self.tokenizer.batch_encode(sample["text"])
-        logger.info("Sample:{}".format(len(sample['label'])))
-        logger.info("tokens:{}".format(len(tokens)))
-        logger.info("lengths:{}".format(lengths))
+        # logger.info("sample text len is:{}".format(len(sample['text'])))
+        # logger.info("text 1is:{}".format(sample['text'][0]))
+        # logger.info("text2 is:{}".format(sample['text'][1]))
+        # logger.info("text3 is:{}".format(sample['text'][2]))
+        tokens, lengths = self.tokenizer.batch_encode(texts)
+        # logger.info("sample text len is:{}".format(len(sample['text'])))
+        # logger.info("Sample label after collate:{}".format(sample['labels']))
+        # logger.info("labels are lists: {}".format(type(sample['labels'][0]) == list ))
+        # logger.info("lengths:{}".format(lengths))
+        
 
         inputs = {"tokens": tokens, "lengths": lengths}
 
         if not prepare_target:
             return inputs, {}
 
+        # return inputs, self.data[self.hparams.targets]
         # Prepare target:
-        try:
-            targets = {"labels": self.data.label_encoder.batch_encode(sample["label"])}
-            return inputs, targets
-        except RuntimeError:
-            raise Exception("Label encoder found an unknown label.")
+        # try:
+        #NOTE WARNING torch.tensor is kinda bad maybe switch for a copier
+        logger.info(labels)
+        #NOTE WARNING double check that mlb is working correct I think it is
+        sample_labels=torch.tensor(self.mlb.transform(labels))
+        logger.info(sample_labels)
+        targets = {'labels': sample_labels}
+        return inputs, targets
+
+        # if not sample['labels']:
+        #     targets = {'labels': self.mlb.transform('')}
+        # else:
+        # logger.info('sample: {}'.format(sample['labels']))
+        # logger.info('type: {}'.format(type(sample['labels'])))
+            # targets = {"labels": self.mlb.transform(sample["labels"])}
+        # a = [self.mlb.transform([x]) if x else self.mlb.transform(['']) for x in sample["labels"]] 
+        # if sample['labels']==[]:
+        #     a = self.mlb.transform(' ')
+        # else:
+        #     a = self.mlb.transform([sample['labels']])
+        # b = torch.tensor(a)
+        # c = b.squeeze()
+
+        targets = {"labels": c}
+        # logger.info(targets['labels'])
+        # targets = {"labels": torch.tensor([self.mlb.transform([x]) if x else self.mlb.transform(['']) for x in sample["labels"]])}
+        # logger.info('targets: {}'.format(targets['labels']))
+        # logger.info("input len{} is {}".format(len(inputs['lengths']),inputs['lengths']))
+        # logger.info(targets['labels'].size())
+        return inputs, targets
+        # except RuntimeError:
+            # raise Exception("Label encoder found an unknown label.")
 
     def training_step(self, batch: tuple, batch_nb: int, *args, **kwargs) -> dict:
         """ 
@@ -491,6 +564,7 @@ class Classifier(pl.LightningModule):
             - dictionary containing the loss and the metrics to be added to the lightning logger.
         """
         inputs, targets = batch
+        logger.info(batch)
         model_out = self.forward(**inputs)
         loss_val = self.loss(model_out, targets)
 
@@ -502,7 +576,8 @@ class Classifier(pl.LightningModule):
 
 
         y_hat=model_out['logits']
-        labels_hat = torch.argmax(y_hat, dim=1)
+        # labels_hat = torch.argmax(y_hat, dim=1)
+        labels_hat = torch.tensor([[1 if x > 0 else 0 for x in item] for item in y_hat], device=y_hat.device)
         y=targets['labels']
 
 
@@ -540,7 +615,15 @@ class Classifier(pl.LightningModule):
         y_hat = model_out["logits"]
 
         # acc
-        labels_hat = torch.argmax(y_hat, dim=1)
+        # logger.info(y_hat)
+        # logger.info(y)
+        # labels_hat = torch.argmax(y_hat, dim=0)
+        # labels_hat
+        labels_hat = torch.tensor([[1 if x > 0 else 0 for x in item] for item in y_hat], device=y_hat.device)
+        
+        # logger.info(labels_hat.device)
+        # logger.info(torch.argmax(y_hat, dim=1))
+
         val_acc = torch.sum(y == labels_hat).item() / (len(y) * 1.0)
         val_acc = torch.tensor(val_acc)
 
@@ -611,7 +694,7 @@ class Classifier(pl.LightningModule):
 
         parser.add_argument(
             "--single_label_encoding",
-            default='default',
+            default='none',
             type=str,
             help="How should labels be encoded? Default for torch-nlp label-encoder...",
         )

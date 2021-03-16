@@ -18,7 +18,7 @@ MAIN_PATH = "/gpfs/milgram/project/khera/rk725/shared/"
 PROT_DATA_PATH = MAIN_PATH + 'prot_data/hf_project_data/'
 
 # DIAGNOSIS_CSV_FP   = "./data/physionet.org/files/mimiciii/1.4/DIAGNOSES_ICD.csv.gz"
-PROCEDURES_CSV_FP  = "./data/physionet.org/files/mimiciii/1.4/PROCEDURES_ICD.csv.gz"
+# PROCEDURES_CSV_FP  = "./data/physionet.org/files/mimiciii/1.4/PROCEDURES_ICD.csv.gz"
 # ICD9_DIAG_KEY_FP   = "./data/physionet.org/files/mimiciii/1.4/D_ICD_DIAGNOSES.csv.gz"
 # ICD9_PROC_KEY_FP   = "./data/physionet.org/files/mimiciii/1.4/D_ICD_PROCEDURES.csv.gz"
 # NOTE_EVENTS_CSV_FP = "./data/physionet.org/files/mimiciii/1.4/NOTEEVENTS.FILTERED.csv.gz"
