@@ -107,14 +107,13 @@ class Classifier(pl.LightningModule):
 
 
             if self.hparams.transformer_type == 'longformer':
-                self.hparams.batch_size = 1
+                self.hparams.batch_size = 6
             self.classifier = classifier_instance
 
             self.transformer_type = self.hparams.transformer_type
 
             self.n_labels = 50
             self.top_codes = pd.read_csv(self.hparams.train_csv)['code'].value_counts()[:self.n_labels].index.tolist()
-            se
             # self.top_codes = ['I48', 'CIR007']
             # self.n_labels = len(self.top_codes)
             logger.warning(f'Classifying against the top {self.n_labels} most frequent ICD codes: {self.top_codes}')
@@ -417,6 +416,9 @@ class Classifier(pl.LightningModule):
         sample = collate_tensors(sample)
         
         tokens, lengths = self.tokenizer.batch_encode(sample["text"])
+        logger.info("Sample:{}".format(len(sample['label'])))
+        logger.info("tokens:{}".format(len(tokens)))
+        logger.info("lengths:{}".format(lengths))
 
         inputs = {"tokens": tokens, "lengths": lengths}
 

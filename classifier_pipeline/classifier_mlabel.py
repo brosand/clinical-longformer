@@ -107,9 +107,9 @@ class Classifier(pl.LightningModule):
             self.hparams = classifier_instance.hparams
 
 
-            if self.hparams.transformer_type == 'longformer':
-                self.hparams.batch_size = 1
-                raise Exception 
+            # if self.hparams.transformer_type == 'longformer':
+                # self.hparams.batch_size = 1
+                # raise Exception 
             self.classifier = classifier_instance
 
             self.transformer_type = self.hparams.transformer_type
@@ -137,9 +137,11 @@ class Classifier(pl.LightningModule):
 
 
         def top_labeler(self, codes):
+            logger.info("codes are: {}".format(codes))
             out = [label for label in codes if label in self.hparams.top_codes]
-            if out != []:
-                return out
+            logger.info("out is: {}".format(out))
+            return out
+            
 
 
 
@@ -151,12 +153,17 @@ class Classifier(pl.LightningModule):
             :return: List of records as dictionaries
             """
         
-            df = pd.read_csv(path, converters={'CODES': eval})
+            if self.hparams.fast_dev_run:
+                df = pd.read_csv(path, converters={'CODES': eval}, skiprows=range(100,100000))
+            else:
+                df = pd.read_csv(path, converters={'CODES': eval})
             df = df[["note_text", "CODES"]]
             df.rename(columns={'note_text':'text', 'CODES': 'labels'}, inplace=True)
 
             # df = df[df['labels'].isin(self.top_codes)]
+            logger.info(df['labels'])
             df['labels'] = df['labels'].map(self.top_labeler)
+            logger.info(df['labels'])
             # df["text"] = df["text"].astype(str)
             # df["label"] = df["label"].astype(str)
 
@@ -192,7 +199,7 @@ class Classifier(pl.LightningModule):
         def test_dataloader(self) -> DataLoader:
             logger.warning('Loading testing data...')
 
-            """ Function that loads the validation set. """
+            """ Function that loads the test set. """
             self._test_dataset = self.get_mimic_data(self.hparams.test_csv)
 
             return DataLoader(
@@ -259,7 +266,7 @@ class Classifier(pl.LightningModule):
         logger.warning(f'model is {self.hparams.encoder_model}')
 
         if self.hparams.transformer_type == 'longformer':
-            logger.warning('Turnin ON gradient checkpointing...')
+            logger.warning('Turning ON gradient checkpointing...')
 
             self.transformer = AutoModel.from_pretrained(
             self.hparams.encoder_model,
@@ -358,6 +365,7 @@ class Classifier(pl.LightningModule):
         # For multiple POSSIBLE discrete single labels, CELoss
         # for many possible categoricla labels, binary cross-entropy (logistic regression for all labels.)
         self._loss = nn.BCELoss()
+        self._loss = nn.BCEWithLogitsLoss()
         # self._loss = nn.CrossEntropyLoss()
 
         # self._loss = nn.MSELoss()
@@ -395,7 +403,7 @@ class Classifier(pl.LightningModule):
                 self.mlb.inverse_transform[prediction]
                 for prediction in np.argmax(logits, axis=1)
             ]
-            sample["predicted_label"] = predicted_labels[0]
+            sample["predicted_label"] = predicted_labels
 
         return sample
 
@@ -436,7 +444,8 @@ class Classifier(pl.LightningModule):
         Returns:
             torch.tensor with loss value.
         """
-        return self._loss(predictions["logits"], targets["labels"])
+        logger.info("loss worked")
+        return self._loss(predictions["logits"], targets["labels"].float())
 
     def prepare_sample(self, sample: list, prepare_target: bool = True) -> (dict, dict):
         """
@@ -450,6 +459,11 @@ class Classifier(pl.LightningModule):
         sample = collate_tensors(sample)
         
         tokens, lengths = self.tokenizer.batch_encode(sample["text"])
+        logger.info("sample text len is:{}".format(len(sample['text'])))
+        logger.info("Sample label:{}".format(sample['labels']))
+        # logger.info("labels are lists: {}".format(type(sample['labels'][0]) == list ))
+        # logger.info("lengths:{}".format(lengths))
+        
 
         inputs = {"tokens": tokens, "lengths": lengths}
 
@@ -460,7 +474,24 @@ class Classifier(pl.LightningModule):
         # Prepare target:
         # try:
 
-        targets = {"labels": self.mlb.transform(sample["labels"])}
+        # if not sample['labels']:
+        #     targets = {'labels': self.mlb.transform('')}
+        # else:
+        # logger.info('sample: {}'.format(sample['labels']))
+        # logger.info('type: {}'.format(type(sample['labels'])))
+            # targets = {"labels": self.mlb.transform(sample["labels"])}
+        a = [self.mlb.transform([x]) if x else self.mlb.transform(['']) for x in sample["labels"]] 
+        b = torch.tensor(a)
+        # logger.info(b)
+        c = b.squeeze()
+        # logger.info(c)
+
+        targets = {"labels": c}
+        # logger.info(targets['labels'])
+        # targets = {"labels": torch.tensor([self.mlb.transform([x]) if x else self.mlb.transform(['']) for x in sample["labels"]])}
+        # logger.info('targets: {}'.format(targets['labels']))
+        # logger.info("input len{} is {}".format(len(inputs['lengths']),inputs['lengths']))
+        # logger.info(targets['labels'].size())
         return inputs, targets
         # except RuntimeError:
             # raise Exception("Label encoder found an unknown label.")
@@ -504,6 +535,7 @@ class Classifier(pl.LightningModule):
             - dictionary containing the loss and the metrics to be added to the lightning logger.
         """
         inputs, targets = batch
+        logger.info(batch)
         model_out = self.forward(**inputs)
         loss_val = self.loss(model_out, targets)
 
@@ -515,7 +547,8 @@ class Classifier(pl.LightningModule):
 
 
         y_hat=model_out['logits']
-        labels_hat = torch.argmax(y_hat, dim=1)
+        # labels_hat = torch.argmax(y_hat, dim=1)
+        labels_hat = torch.tensor([[1 if x > 0 else 0 for x in item] for item in y_hat], device=y_hat.device)
         y=targets['labels']
 
 
@@ -553,7 +586,15 @@ class Classifier(pl.LightningModule):
         y_hat = model_out["logits"]
 
         # acc
-        labels_hat = torch.argmax(y_hat, dim=1)
+        # logger.info(y_hat)
+        # logger.info(y)
+        # labels_hat = torch.argmax(y_hat, dim=0)
+        # labels_hat
+        labels_hat = torch.tensor([[1 if x > 0 else 0 for x in item] for item in y_hat], device=y_hat.device)
+        
+        # logger.info(labels_hat.device)
+        # logger.info(torch.argmax(y_hat, dim=1))
+
         val_acc = torch.sum(y == labels_hat).item() / (len(y) * 1.0)
         val_acc = torch.tensor(val_acc)
 
