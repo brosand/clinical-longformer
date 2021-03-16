@@ -18,6 +18,7 @@ from transformers.models.longformer.modeling_longformer import LongformerSelfAtt
 import pytorch_lightning as pl
 from tokenizer import Tokenizer
 from torchnlp.encoders import LabelEncoder
+from torchnlp.encoders.text import stack_and_pad_tensors
 from torchnlp.utils import collate_tensors, lengths_to_mask
 from utils import mask_fill
 from sklearn.preprocessing import MultiLabelBinarizer
@@ -121,6 +122,10 @@ class Classifier(pl.LightningModule):
             # self.top_codes = ['I48', 'CIR007']
             # self.hparams.n_labels = len(self.top_codes)
             logger.warning(f'Classifying against the top {self.hparams.n_labels} most frequent ICD codes: {self.hparams.top_codes}')
+
+
+            self.mlb = MultiLabelBinarizer()
+            self.mlb.fit([self.hparams.top_codes])
             
 
              # Label Encoder
@@ -137,9 +142,12 @@ class Classifier(pl.LightningModule):
 
 
         def top_labeler(self, codes):
-            logger.info("codes are: {}".format(codes))
+            # logger.info("codes are: {}".format(codes))
             out = [label for label in codes if label in self.hparams.top_codes]
-            logger.info("out is: {}".format(out))
+            # logger.info("out is: {}".format(out))
+            if out == []:
+               out = ['']
+            # return self.mlb.transform([out])
             return out
             
 
@@ -161,11 +169,11 @@ class Classifier(pl.LightningModule):
             df.rename(columns={'note_text':'text', 'CODES': 'labels'}, inplace=True)
 
             # df = df[df['labels'].isin(self.top_codes)]
-            logger.info(df['labels'])
+            # logger.info(df['labels'])
             df['labels'] = df['labels'].map(self.top_labeler)
-            logger.info(df['labels'])
+            # logger.info(df['labels'])
             # df["text"] = df["text"].astype(str)
-            # df["label"] = df["label"].astype(str)
+            # df["label"] = df["label"].astype(tr)
 
             df.to_csv(f'{path}_top_codes_filtered.csv')
 
@@ -454,13 +462,25 @@ class Classifier(pl.LightningModule):
         
         Returns:
             - dictionary with the expected model inputs.
-            - dictionary with the expected target labels.
+            - dictionary with the expe  cted target labels.
         """
-        sample = collate_tensors(sample)
+        # logger.info("Sample label:{}".format([sample[i]['labels'] for i in range(6)]))
+        # logger.info("Sample label:{}".format(sample))
+        # sample['text'] = collate_tensors(sample[i]['text']for i in range(6))
+        # sample = collate_tensors(sample)
+
+        texts = [s['text'] for s in sample]
+        labels = [s['labels'] for s in sample]
+
+
         
-        tokens, lengths = self.tokenizer.batch_encode(sample["text"])
-        logger.info("sample text len is:{}".format(len(sample['text'])))
-        logger.info("Sample label:{}".format(sample['labels']))
+        # logger.info("sample text len is:{}".format(len(sample['text'])))
+        # logger.info("text 1is:{}".format(sample['text'][0]))
+        # logger.info("text2 is:{}".format(sample['text'][1]))
+        # logger.info("text3 is:{}".format(sample['text'][2]))
+        tokens, lengths = self.tokenizer.batch_encode(texts)
+        # logger.info("sample text len is:{}".format(len(sample['text'])))
+        # logger.info("Sample label after collate:{}".format(sample['labels']))
         # logger.info("labels are lists: {}".format(type(sample['labels'][0]) == list ))
         # logger.info("lengths:{}".format(lengths))
         
@@ -473,6 +493,13 @@ class Classifier(pl.LightningModule):
         # return inputs, self.data[self.hparams.targets]
         # Prepare target:
         # try:
+        #NOTE WARNING torch.tensor is kinda bad maybe switch for a copier
+        logger.info(labels)
+        #NOTE WARNING double check that mlb is working correct I think it is
+        sample_labels=torch.tensor(self.mlb.transform(labels))
+        logger.info(sample_labels)
+        targets = {'labels': sample_labels}
+        return inputs, targets
 
         # if not sample['labels']:
         #     targets = {'labels': self.mlb.transform('')}
@@ -480,11 +507,13 @@ class Classifier(pl.LightningModule):
         # logger.info('sample: {}'.format(sample['labels']))
         # logger.info('type: {}'.format(type(sample['labels'])))
             # targets = {"labels": self.mlb.transform(sample["labels"])}
-        a = [self.mlb.transform([x]) if x else self.mlb.transform(['']) for x in sample["labels"]] 
-        b = torch.tensor(a)
-        # logger.info(b)
-        c = b.squeeze()
-        # logger.info(c)
+        # a = [self.mlb.transform([x]) if x else self.mlb.transform(['']) for x in sample["labels"]] 
+        # if sample['labels']==[]:
+        #     a = self.mlb.transform(' ')
+        # else:
+        #     a = self.mlb.transform([sample['labels']])
+        # b = torch.tensor(a)
+        # c = b.squeeze()
 
         targets = {"labels": c}
         # logger.info(targets['labels'])
