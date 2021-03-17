@@ -604,8 +604,8 @@ class Classifier(pl.LightningModule):
         preds = outputs['preds']
         target = outputs['target']
 
-        logger.info("Pred shape is {}".format(preds.size()))
-        logger.info("Target shape is {}".format(target.size()))
+        # logger.info("Pred shape is {}".format(preds.size()))
+        # logger.info("Target shape is {}".format(target.size()))
         # f1 = metrics.f1_score(labels_hat,y,    class_reduction='weighted')
         # prec =metrics.precision(labels_hat,y,  class_reduction='weighted')
         # recall = metrics.recall(labels_hat,y,  class_reduction='weighted')
@@ -642,7 +642,7 @@ class Classifier(pl.LightningModule):
         # logger.info(classification_report(preds.detach().cpu(), target.detach().cpu()))
         # logger.info(confusion_matrix)
         #update and log
-        if not self.test_predictions:
+        if self.test_predictions is None:
             self.test_predictions = preds
             self.test_labels = target
         else:

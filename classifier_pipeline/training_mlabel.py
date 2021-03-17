@@ -74,6 +74,7 @@ def main(hparams) -> None:
     # ------------------------
     # 5 INIT TRAINER
     # ------------------------
+    # checkpoint_path = '/home/br384/project/clinical-longformer/experiments/allenai/longformer-base-4096/version_16-03-2021--21-15-47/checkpoints/epoch\=9-step\=169.ckpt'
     trainer = Trainer(
         logger=tb_logger,
         gpus=hparams.gpus,
@@ -81,15 +82,18 @@ def main(hparams) -> None:
         fast_dev_run=hparams.fast_dev_run,
         accumulate_grad_batches=hparams.accumulate_grad_batches,
         max_epochs=hparams.max_epochs,
-        default_root_dir=f'./classifier_pipeline/{hparams.encoder_model}',
+        # default_root_dir=f'./classifier_pipeline/{hparams.encoder_model}',
         accelerator='dp',
         profiler="simple",
         # checkpoint_callback=checkpoint,
-        overfit_batches=0.01,
-        limit_train_batches=0.1,
-        limit_val_batches=0.01
+        # overfit_batches=0.01,
+        limit_train_batches=0.3,
+        limit_val_batches=0.1,
         # early_stop_callback=early_stop,
+        # resume_from_checkpoint=checkpoint_path
     )
+
+
 
     # ------------------------
     # 6 START TRAINING
@@ -104,10 +108,16 @@ def main(hparams) -> None:
     preds = model.test_predictions.detach().cpu()
     target = model.test_labels.detach().cpu()
     logger.info(classification_report(preds, target))
+    logger.info(preds)
+    logger.info(target)
+
     
     import pandas as pd
     decoded_preds = model.mlb.inverse_transform(preds)
     decoded_truth = model.mlb.inverse_transform(target)
+    logger.info(decoded_preds)
+    logger.info(decoded_truth)
+    logger.info(classification_report(decoded_preds, decoded_truth))
     # out = pd.DataFrame.from_dict({"preds": preds, "truth": target, "decoded_preds": decoded_preds, "decoded_truth": decoded_truth})
     out = pd.DataFrame.from_dict({"decoded_preds": decoded_preds, "decoded_truth": decoded_truth})
     out.to_csv('model_output.csv')
