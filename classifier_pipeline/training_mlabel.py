@@ -15,6 +15,9 @@ from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import LightningLoggerBase, TensorBoardLogger
 from torchnlp.random import set_seed
+
+from sklearn.metrics import classification_report
+from loguru import logger
 #%%
 
 
@@ -38,11 +41,36 @@ def main(hparams) -> None:
     model = Classifier(hparams)
     
 
+    version="version_" + datetime.now().strftime("%d-%m-%Y--%H-%M-%S")
+    name=f'{hparams.encoder_model}'
+
+    save_path = 'experiments/' + name + '/' + version
     tb_logger = TensorBoardLogger(
         save_dir='experiments/',
-        version="version_" + datetime.now().strftime("%d-%m-%Y--%H-%M-%S"),
-        name=f'{hparams.encoder_model}',
+        version=version,
+        name=name
     )
+
+    # # Early stopping
+
+    # early_stop = EarlyStopping(
+    #     monitor=hparams.early_stop_metric,
+    #     patience=hparams.early_stop_patience,
+    #     verbose=True,
+    #     mode=hparams.early_stop_mode
+    # )
+
+    # Checkpointing
+    # hparams.model_save_path = 'experiments/'
+    # model_save_path = '{}/{}/{}'.format(hparams.model_save_path, hparams.encoder_model, version)
+    # checkpoint = ModelCheckpoint(
+    #     filepath=model_save_path,
+    #     # save_function=None,
+    #     # save_best_only=True,
+    #     verbose=True,
+    #     monitor=hparams.monitor,
+    #     # mode=hparams.model_save_monitor_mode
+    # )
     # ------------------------
     # 5 INIT TRAINER
     # ------------------------
@@ -56,6 +84,11 @@ def main(hparams) -> None:
         default_root_dir=f'./classifier_pipeline/{hparams.encoder_model}',
         accelerator='dp',
         profiler="simple",
+        # checkpoint_callback=checkpoint,
+        overfit_batches=0.01,
+        limit_train_batches=0.1,
+        limit_val_batches=0.01
+        # early_stop_callback=early_stop,
     )
 
     # ------------------------
@@ -66,8 +99,19 @@ def main(hparams) -> None:
     trainer.fit(model, model.data)
     trainer.test(model, model.data.test_dataloader())
 
-    cms = np.array(model.test_conf_matrices)
-    np.save(f'experiments/{model.hparams.encoder_model}/test_confusion_matrices.npy',cms)
+    # cms = np.array(model.test_conf_matrices)
+    # np.save(f'experiments/{model.hparams.encoder_model}/test_confusion_matrices.npy',cms)
+    preds = model.test_predictions.detach().cpu()
+    target = model.test_labels.detach().cpu()
+    logger.info(classification_report(preds, target))
+    
+    import pandas as pd
+    decoded_preds = model.mlb.inverse_transform(preds)
+    decoded_truth = model.mlb.inverse_transform(target)
+    # out = pd.DataFrame.from_dict({"preds": preds, "truth": target, "decoded_preds": decoded_preds, "decoded_truth": decoded_truth})
+    out = pd.DataFrame.from_dict({"decoded_preds": decoded_preds, "decoded_truth": decoded_truth})
+    out.to_csv('model_output.csv')
+
 
 
 if __name__ == "__main__":

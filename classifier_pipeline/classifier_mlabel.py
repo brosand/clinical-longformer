@@ -259,6 +259,10 @@ class Classifier(pl.LightningModule):
         self.prec = torchmetrics.Precision(num_classes=self.hparams.n_labels, is_multiclass=False)
         self.recall = torchmetrics.Recall(num_classes=self.hparams.n_labels, is_multiclass=False)
         self.confusion_matrix = torchmetrics.ConfusionMatrix(num_classes=self.hparams.n_labels)
+
+
+        self.test_predictions = None
+        self.test_labels = None
         
 
     def __build_model(self) -> None:
@@ -323,11 +327,9 @@ class Classifier(pl.LightningModule):
         if self.hparams.nn_arch == 'ben1':
             self.classification_head = nn.Sequential(
 
-                nn.Dropout(0.1),
                 nn.Linear(self.encoder_features, self.encoder_features * 3),
-                nn.Tanh(),
+                nn.Dropout(0.1),
                 nn.Linear(self.encoder_features * 3, self.encoder_features),
-                nn.Tanh(),
                 nn.Linear(self.encoder_features, self.hparams.n_labels),
 
             )
@@ -632,14 +634,21 @@ class Classifier(pl.LightningModule):
         from pytorch_lightning.metrics.functional import confusion_matrix
         # TODO CHANGE THIS
         # return (labels_hat, y)
-        cm = confusion_matrix(preds = preds,target=target,normalize=None, num_classes=50)
+        # cm = confusion_matrix(preds = preds,target=target,normalize=None, num_classes=50)
         # cm = confusion_matrix(preds = labels_hat,target=y,normalize=False, num_classes=len(y.unique()))
-        self.test_conf_matrices.append(cm)
+        # self.test_conf_matrices.append(cm)
         # logger.info(labels_hat)
         # logger.info(y)
-        logger.info(classification_report(preds.detach().cpu(), target.detach().cpu()))
-        logger.info(confusion_matrix)
+        # logger.info(classification_report(preds.detach().cpu(), target.detach().cpu()))
+        # logger.info(confusion_matrix)
         #update and log
+        if not self.test_predictions:
+            self.test_predictions = preds
+            self.test_labels = target
+        else:
+
+            self.test_predictions = torch.cat((self.test_predictions, preds), 0)
+            self.test_labels = torch.cat((self.test_labels, target), 0)
 
     def validation_step(self, batch: tuple, batch_nb: int, *args, **kwargs) -> dict:
         """ Similar to the training step but with the model in eval mode.
